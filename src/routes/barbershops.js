@@ -17,7 +17,9 @@ router.get('/', async (req, res) => {
     .eq('active', true);
 
   if (search) {
-    query = query.ilike('name', `%${search}%`);
+    query = query.or(
+      `name.ilike.%${search}%,address.ilike.%${search}%,city.ilike.%${search}%,state.ilike.%${search}%`
+    );
   }
 
   const { data, error } = await query;
