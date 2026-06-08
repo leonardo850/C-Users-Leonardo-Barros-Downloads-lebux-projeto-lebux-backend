@@ -7,10 +7,21 @@
 CREATE TABLE users (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
+  username TEXT UNIQUE,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user',
   phone TEXT,
   avatar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Tokens de redefinição de senha (para implementar fluxo seguro)
+CREATE TABLE password_resets (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  token TEXT UNIQUE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

@@ -7,6 +7,8 @@ const authRoutes = require('./routes/auth');
 const barbershopRoutes = require('./routes/barbershops');
 const appointmentRoutes = require('./routes/appointments');
 const serviceRoutes = require('./routes/services');
+const supabase = require('./lib/supabase');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 
@@ -37,4 +39,35 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3001;
+
+async function ensureAdminUser() {
+  const adminEmail = 'lebuxapp@gmail.com';
+  const adminUsername = 'admin';
+  const adminPassword = 'Enrico@24';
+
+  const { data: existing } = await supabase
+    .from('users')
+    .select('*')
+    .or(`email.eq.${adminEmail},username.eq.${adminUsername}`)
+    .single();
+
+  if (existing) {
+    if (existing.role !== 'admin') {
+      await supabase.from('users').update({ role: 'admin' }).eq('id', existing.id);
+    }
+    return;
+  }
+
+  const hashed = await bcrypt.hash(adminPassword, 12);
+  await supabase.from('users').insert({
+    name: 'Admin Lebux',
+    username: adminUsername,
+    email: adminEmail,
+    password_hash: hashed,
+    role: 'admin',
+  });
+}
+
+ensureAdminUser().catch(err => console.error('Erro ao garantir usuário admin:', err));
+
 app.listen(PORT, () => console.log(`🚀 Lebux API rodando na porta ${PORT}`));
