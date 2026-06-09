@@ -65,7 +65,6 @@ router.get('/:id/availability', async (req, res) => {
   const { date, service_id } = req.query;
   if (!date) return res.status(400).json({ error: 'Data obrigatória' });
 
-  // Buscar agendamentos existentes no dia
   const { data: booked } = await supabase
     .from('appointments')
     .select('start_time')
@@ -75,7 +74,6 @@ router.get('/:id/availability', async (req, res) => {
 
   const bookedTimes = (booked || []).map(a => a.start_time);
 
-  // Slots disponíveis (09h às 18h, de 30 em 30 min)
   const slots = [];
   for (let h = 9; h < 18; h++) {
     for (let m = 0; m < 60; m += 30) {
