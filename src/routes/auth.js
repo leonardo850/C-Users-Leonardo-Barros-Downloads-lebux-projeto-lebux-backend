@@ -27,16 +27,19 @@ router.post('/register', async (req, res) => {
 
   const hashed = await bcrypt.hash(password, 12);
 
-  const newUser = { name, email: emailNorm, password_hash: hashed, phone, role: 'user' };
+  const newUser = { name, email: emailNorm, password_hash: hashed, phone };
   if (usernameNorm) newUser.username = usernameNorm;
 
   const { data, error } = await supabase
     .from('users')
     .insert(newUser)
-    .select('id, name, email, phone, username, role')
+    .select('id, name, email, phone')
     .single();
 
-  if (error) return res.status(500).json({ error: 'Erro ao criar usuário' });
+  if (error) {
+    console.error('Supabase insert error:', error);
+    return res.status(500).json({ error: 'Erro ao criar usuário' });
+  }
 
   const token = jwt.sign({ id: data.id, email: data.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
   res.status(201).json({ user: data, token });
@@ -51,7 +54,7 @@ router.post('/login', async (req, res) => {
   const { data: user } = await supabase
     .from('users')
     .select('*')
-    .or(`email.eq.${normalized},username.eq.${normalized}`)
+    .eq('email', normalized)
     .single();
 
   if (!user) return res.status(401).json({ error: 'Email ou senha inválidos' });

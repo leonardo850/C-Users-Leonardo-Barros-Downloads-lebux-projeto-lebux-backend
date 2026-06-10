@@ -42,29 +42,21 @@ const PORT = process.env.PORT || 3001;
 
 async function ensureAdminUser() {
   const adminEmail = 'lebuxapp@gmail.com';
-  const adminUsername = 'admin';
   const adminPassword = 'Enrico@24';
 
   const { data: existing } = await supabase
     .from('users')
     .select('*')
-    .or(`email.eq.${adminEmail},username.eq.${adminUsername}`)
+    .eq('email', adminEmail)
     .single();
 
-  if (existing) {
-    if (existing.role !== 'admin') {
-      await supabase.from('users').update({ role: 'admin' }).eq('id', existing.id);
-    }
-    return;
-  }
+  if (existing) return;
 
   const hashed = await bcrypt.hash(adminPassword, 12);
   await supabase.from('users').insert({
     name: 'Admin Lebux',
-    username: adminUsername,
     email: adminEmail,
     password_hash: hashed,
-    role: 'admin',
   });
 }
 
