@@ -13,7 +13,18 @@ const bcrypt = require('bcryptjs');
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'https://lebux.vercel.app',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000'
+    ];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS not allowed'));
+    }
+  },
   credentials: true
 }));
 
