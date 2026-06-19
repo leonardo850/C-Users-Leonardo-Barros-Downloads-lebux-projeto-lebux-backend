@@ -116,4 +116,32 @@ router.post('/reset', async (req, res) => {
   return res.json({ message: 'Senha alterada com sucesso' });
 });
 
+// PATCH /api/auth/password - Alterar senha (requer autenticação)
+router.patch('/password', require('../middleware/auth'), async (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: 'Senha atual e nova senha são obrigatórias' });
+  }
+  if (new_password.length < 8) {
+    return res.status(400).json({ error: 'Nova senha deve ter no mínimo 8 caracteres' });
+  }
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('password_hash')
+    .eq('id', req.user.id)
+    .single();
+
+  if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+  const valid = await bcrypt.compare(current_password, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Senha atual incorreta' });
+
+  const hashed = await bcrypt.hash(new_password, 12);
+  const { error } = await supabase.from('users').update({ password_hash: hashed }).eq('id', req.user.id);
+  if (error) return res.status(500).json({ error: 'Erro ao alterar senha' });
+
+  res.json({ message: 'Senha alterada com sucesso' });
+});
+
 module.exports = router;
