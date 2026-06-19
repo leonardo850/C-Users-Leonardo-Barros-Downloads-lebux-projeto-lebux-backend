@@ -16,10 +16,10 @@ app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = [
       'https://lebux.vercel.app',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000'
+      /^http:\/\/localhost:\d+$/,
+      /^http:\/\/127\.0\.0\.1:\d+$/
     ];
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.some(a => a instanceof RegExp ? a.test(origin) : a === origin)) {
       callback(null, true);
     } else {
       callback(new Error('CORS not allowed'));
