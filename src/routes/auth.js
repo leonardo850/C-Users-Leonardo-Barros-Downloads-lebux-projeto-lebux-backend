@@ -52,16 +52,21 @@ router.post('/login', async (req, res) => {
 
   let user;
 
-  // Login por CNPJ (14 dígitos após remover formatação)
+  // Login por CNPJ ou email
   const digitsOnly = identifier.replace(/\D/g, '');
   if (digitsOnly.length === 14) {
-    const { data: found } = await supabase
-      .from('users')
-      .select('*')
-      .eq('cnpj', digitsOnly)
-      .single();
-    user = found;
-  } else {
+    try {
+      const { data: found } = await supabase
+        .from('users')
+        .select('*')
+        .eq('cnpj', digitsOnly)
+        .single();
+      user = found;
+    } catch {
+      user = null;
+    }
+  }
+  if (!user) {
     const normalized = identifier.toLowerCase();
     const { data: found } = await supabase
       .from('users')

@@ -79,30 +79,53 @@ async function ensureCompanyUser() {
   const companyEmail = 'empresa@lebux.com';
   const companyPassword = 'Empresa@123';
 
-  const { data: existing } = await supabase
+  // Verificar se já existe por email
+  const { data: existingByEmail } = await supabase
     .from('users')
     .select('*')
-    .eq('cnpj', companyCNPJ)
+    .eq('email', companyEmail)
     .single();
 
-  if (existing) return existing;
+  if (existingByEmail) {
+    try {
+      if (!existingByEmail.cnpj) {
+        await supabase.from('users').update({ cnpj: companyCNPJ }).eq('id', existingByEmail.id);
+      }
+    } catch { /* coluna cnpj pode não existir ainda */ }
+    return existingByEmail;
+  }
 
   const hashed = await bcrypt.hash(companyPassword, 12);
-  const { data: newUser, error } = await supabase
-    .from('users')
-    .insert({
-      name: 'Barbearia do Leonardo',
-      email: companyEmail,
-      cnpj: companyCNPJ,
-      password_hash: hashed,
-      role: 'company',
-    })
-    .select('*')
-    .single();
 
-  if (error) {
-    console.error('Erro ao criar usuário empresa:', error);
-    return null;
+  // Tentar criar com CNPJ; se falhar (coluna não existe), criar sem
+  const insertData = {
+    name: 'Barbearia do Leonardo',
+    email: companyEmail,
+    password_hash: hashed,
+    role: 'company',
+  };
+
+  let newUser;
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .insert({ ...insertData, cnpj: companyCNPJ })
+      .select('*')
+      .single();
+    if (error) throw error;
+    newUser = data;
+  } catch {
+    // Coluna cnpj pode não existir ainda — criar sem
+    const { data, error } = await supabase
+      .from('users')
+      .insert(insertData)
+      .select('*')
+      .single();
+    if (error) {
+      console.error('Erro ao criar usuário empresa:', error);
+      return null;
+    }
+    newUser = data;
   }
 
   // Vincular a primeira barbearia como proprietário
