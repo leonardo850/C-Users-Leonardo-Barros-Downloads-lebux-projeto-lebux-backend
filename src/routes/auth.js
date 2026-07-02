@@ -49,22 +49,47 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   const identifier = String(email || '').trim();
-  const normalized = identifier.includes('@') ? identifier.toLowerCase() : identifier.toLowerCase();
 
-  const { data: user } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', normalized)
-    .single();
+  let user;
 
-  if (!user) return res.status(401).json({ error: 'Email ou senha inválidos' });
+  // Login por CNPJ (14 dígitos após remover formatação)
+  const digitsOnly = identifier.replace(/\D/g, '');
+  if (digitsOnly.length === 14) {
+    const { data: found } = await supabase
+      .from('users')
+      .select('*')
+      .eq('cnpj', digitsOnly)
+      .single();
+    user = found;
+  } else {
+    const normalized = identifier.toLowerCase();
+    const { data: found } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', normalized)
+      .single();
+    user = found;
+  }
+
+  if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
 
   const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Email ou senha inválidos' });
+  if (!valid) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-  const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
   const { password_hash, ...safeUser } = user;
-  res.json({ user: safeUser, token });
+
+  // Se for empresa, buscar barbearias vinculadas
+  let barbershops = [];
+  if (user.role === 'company') {
+    const { data: shops } = await supabase
+      .from('barbershops')
+      .select('id, name, address, city')
+      .eq('owner_id', user.id);
+    barbershops = shops || [];
+  }
+
+  res.json({ user: safeUser, token, barbershops });
 });
 
 // POST /api/auth/forgot

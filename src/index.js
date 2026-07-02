@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const barbershopRoutes = require('./routes/barbershops');
 const appointmentRoutes = require('./routes/appointments');
 const serviceRoutes = require('./routes/services');
+const companyRoutes = require('./routes/company');
 const supabase = require('./lib/supabase');
 const bcrypt = require('bcryptjs');
 
@@ -16,6 +17,7 @@ app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = [
       'https://lebux.vercel.app',
+      'https://frontend-lebux.vercel.app',
       /^http:\/\/localhost:\d+$/,
       /^http:\/\/127\.0\.0\.1:\d+$/
     ];
@@ -41,6 +43,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/barbershops', barbershopRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/services', serviceRoutes);
+app.use('/api/company', companyRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok', app: 'Lebux API' }));
 
@@ -71,6 +74,56 @@ async function ensureAdminUser() {
   });
 }
 
+async function ensureCompanyUser() {
+  const companyCNPJ = '12345678000190';
+  const companyEmail = 'empresa@lebux.com';
+  const companyPassword = 'Empresa@123';
+
+  const { data: existing } = await supabase
+    .from('users')
+    .select('*')
+    .eq('cnpj', companyCNPJ)
+    .single();
+
+  if (existing) return existing;
+
+  const hashed = await bcrypt.hash(companyPassword, 12);
+  const { data: newUser, error } = await supabase
+    .from('users')
+    .insert({
+      name: 'Barbearia do Leonardo',
+      email: companyEmail,
+      cnpj: companyCNPJ,
+      password_hash: hashed,
+      role: 'company',
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('Erro ao criar usuário empresa:', error);
+    return null;
+  }
+
+  // Vincular a primeira barbearia como proprietário
+  const { data: firstShop } = await supabase
+    .from('barbershops')
+    .select('id')
+    .limit(1)
+    .single();
+
+  if (firstShop) {
+    await supabase
+      .from('barbershops')
+      .update({ owner_id: newUser.id })
+      .eq('id', firstShop.id);
+    console.log(`✅ Barbearia "${firstShop.id}" vinculada à empresa`);
+  }
+
+  return newUser;
+}
+
 ensureAdminUser().catch(err => console.error('Erro ao garantir usuário admin:', err));
+ensureCompanyUser().catch(err => console.error('Erro ao garantir usuário empresa:', err));
 
 app.listen(PORT, () => console.log(`🚀 Lebux API rodando na porta ${PORT}`));

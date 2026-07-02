@@ -3,12 +3,13 @@
 -- Cole este SQL no SQL Editor do Supabase e execute
 -- ============================================================
 
--- Usuários (clientes)
+-- Usuários (clientes e empresas)
 CREATE TABLE users (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   username TEXT UNIQUE,
   email TEXT UNIQUE NOT NULL,
+  cnpj TEXT UNIQUE,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',
   phone TEXT,
