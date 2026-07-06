@@ -75,60 +75,33 @@ async function ensureAdminUser() {
 }
 
 async function ensureCompanyUser() {
-  const companyCNPJ = '12345678000190';
   const companyEmail = 'empresa@lebux.com';
   const companyPassword = 'Empresa@123';
 
-  // Verificar se já existe por email
-  const { data: existingByEmail } = await supabase
+  const { data: existing } = await supabase
     .from('users')
     .select('*')
     .eq('email', companyEmail)
     .single();
 
-  if (existingByEmail) {
-    try {
-      if (!existingByEmail.cnpj) {
-        await supabase.from('users').update({ cnpj: companyCNPJ }).eq('id', existingByEmail.id);
-      }
-    } catch { /* coluna cnpj pode não existir ainda */ }
-    return existingByEmail;
-  }
+  if (existing) return existing;
 
   const hashed = await bcrypt.hash(companyPassword, 12);
+  const { data: newUser, error } = await supabase
+    .from('users')
+    .insert({
+      name: 'Barbearia do Leonardo',
+      email: companyEmail,
+      password_hash: hashed,
+    })
+    .select('*')
+    .single();
 
-  // Tentar criar com CNPJ; se falhar (coluna não existe), criar sem
-  const insertData = {
-    name: 'Barbearia do Leonardo',
-    email: companyEmail,
-    password_hash: hashed,
-    role: 'company',
-  };
-
-  let newUser;
-  try {
-    const { data, error } = await supabase
-      .from('users')
-      .insert({ ...insertData, cnpj: companyCNPJ })
-      .select('*')
-      .single();
-    if (error) throw error;
-    newUser = data;
-  } catch {
-    // Coluna cnpj pode não existir ainda — criar sem
-    const { data, error } = await supabase
-      .from('users')
-      .insert(insertData)
-      .select('*')
-      .single();
-    if (error) {
-      console.error('Erro ao criar usuário empresa:', error);
-      return null;
-    }
-    newUser = data;
+  if (error) {
+    console.error('Erro ao criar usuário empresa:', error);
+    return null;
   }
 
-  // Vincular a primeira barbearia como proprietário
   const { data: firstShop } = await supabase
     .from('barbershops')
     .select('id')

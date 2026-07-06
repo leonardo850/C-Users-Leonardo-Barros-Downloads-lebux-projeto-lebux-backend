@@ -49,52 +49,30 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   const identifier = String(email || '').trim();
+  const normalized = identifier.toLowerCase();
 
-  let user;
-
-  // Login por CNPJ ou email
-  const digitsOnly = identifier.replace(/\D/g, '');
-  if (digitsOnly.length === 14) {
-    try {
-      const { data: found } = await supabase
-        .from('users')
-        .select('*')
-        .eq('cnpj', digitsOnly)
-        .single();
-      user = found;
-    } catch {
-      user = null;
-    }
-  }
-  if (!user) {
-    const normalized = identifier.toLowerCase();
-    const { data: found } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', normalized)
-      .single();
-    user = found;
-  }
+  const { data: user } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', normalized)
+    .single();
 
   if (!user) return res.status(401).json({ error: 'Credenciais inválidas' });
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ error: 'Credenciais inválidas' });
 
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
   const { password_hash, ...safeUser } = user;
 
-  // Se for empresa, buscar barbearias vinculadas
-  let barbershops = [];
-  if (user.role === 'company') {
-    const { data: shops } = await supabase
-      .from('barbershops')
-      .select('id, name, address, city')
-      .eq('owner_id', user.id);
-    barbershops = shops || [];
-  }
+  // Identificar empresa pelo email
+  const isCompany = user.email === 'empresa@lebux.com';
 
-  res.json({ user: safeUser, token, barbershops });
+  const { data: barbershops } = isCompany
+    ? await supabase.from('barbershops').select('id, name, address, city').eq('owner_id', user.id)
+    : { data: [] };
+
+  res.json({ user: safeUser, token, isCompany, barbershops: barbershops || [] });
 });
 
 // POST /api/auth/forgot

@@ -4,9 +4,9 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-// Middleware para verificar role = company
+// Middleware para verificar se é empresa
 function companyMiddleware(req, res, next) {
-  if (req.user.role !== 'company') {
+  if (req.user.email !== 'empresa@lebux.com') {
     return res.status(403).json({ error: 'Acesso permitido apenas para empresas' });
   }
   next();
