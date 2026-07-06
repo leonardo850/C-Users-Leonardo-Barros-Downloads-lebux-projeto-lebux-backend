@@ -98,10 +98,38 @@ CREATE TABLE reviews (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Horários de funcionamento por dia da semana
+CREATE TABLE business_hours (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  barbershop_id UUID REFERENCES barbershops(id) ON DELETE CASCADE,
+  day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+  is_open BOOLEAN DEFAULT true,
+  open_time TIME DEFAULT '09:00',
+  close_time TIME DEFAULT '19:00',
+  UNIQUE(barbershop_id, day_of_week)
+);
+
+-- Horários padrão para barbearias existentes (opcional)
+INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, close_time)
+SELECT id, 0, false, '09:00', '19:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 0);
+INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, close_time)
+SELECT id, 1, true, '09:00', '19:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 1);
+INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, close_time)
+SELECT id, 2, true, '09:00', '19:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 2);
+INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, close_time)
+SELECT id, 3, true, '09:00', '19:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 3);
+INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, close_time)
+SELECT id, 4, true, '09:00', '19:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 4);
+INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, close_time)
+SELECT id, 5, true, '09:00', '19:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 5);
+INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, close_time)
+SELECT id, 6, true, '09:00', '13:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 6);
+
 -- Índices para performance
 CREATE INDEX idx_barbershops_location ON barbershops(latitude, longitude);
 CREATE INDEX idx_appointments_date ON appointments(barbershop_id, date);
 CREATE INDEX idx_appointments_user ON appointments(user_id);
+CREATE INDEX idx_business_hours_shop ON business_hours(barbershop_id);
 
 -- ============================================================
 -- DADOS DE EXEMPLO (barbearias demo)

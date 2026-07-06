@@ -208,4 +208,65 @@ router.get('/reports', authMiddleware, companyMiddleware, async (req, res) => {
   });
 });
 
+// GET /api/company/hours/:shop_id — horários de funcionamento
+router.get('/hours/:shop_id', authMiddleware, companyMiddleware, async (req, res) => {
+  const { data: hours, error } = await supabase
+    .from('business_hours')
+    .select('*')
+    .eq('barbershop_id', req.params.shop_id)
+    .order('day_of_week');
+
+  if (error) {
+    // Tabela pode não existir — retornar padrão
+    return res.json({ hours: defaultHours() });
+  }
+
+  if (!hours?.length) return res.json({ hours: defaultHours() });
+  res.json({ hours });
+});
+
+// PUT /api/company/hours/:shop_id — atualizar horários
+router.put('/hours/:shop_id', authMiddleware, companyMiddleware, async (req, res) => {
+  const { hours } = req.body;
+  if (!Array.isArray(hours)) return res.status(400).json({ error: 'hours deve ser um array' });
+
+  // Verificar se a barbearia pertence à empresa
+  const { data: shop } = await supabase
+    .from('barbershops')
+    .select('id')
+    .eq('id', req.params.shop_id)
+    .eq('owner_id', req.user.id)
+    .single();
+
+  if (!shop) return res.status(403).json({ error: 'Barbearia não pertence à sua empresa' });
+
+  // Remover horários antigos e inserir novos
+  await supabase.from('business_hours').delete().eq('barbershop_id', req.params.shop_id);
+
+  const records = hours.map(h => ({
+    barbershop_id: req.params.shop_id,
+    day_of_week: h.day_of_week,
+    is_open: h.is_open !== false,
+    open_time: h.open_time || '09:00',
+    close_time: h.close_time || '19:00',
+  }));
+
+  const { error } = await supabase.from('business_hours').insert(records);
+  if (error) return res.status(500).json({ error: 'Erro ao salvar horários' });
+
+  res.json({ hours: records, message: 'Horários atualizados!' });
+});
+
+function defaultHours() {
+  return [
+    { day_of_week: 0, is_open: false, open_time: '09:00', close_time: '19:00' },
+    { day_of_week: 1, is_open: true, open_time: '09:00', close_time: '19:00' },
+    { day_of_week: 2, is_open: true, open_time: '09:00', close_time: '19:00' },
+    { day_of_week: 3, is_open: true, open_time: '09:00', close_time: '19:00' },
+    { day_of_week: 4, is_open: true, open_time: '09:00', close_time: '19:00' },
+    { day_of_week: 5, is_open: true, open_time: '09:00', close_time: '19:00' },
+    { day_of_week: 6, is_open: true, open_time: '09:00', close_time: '13:00' },
+  ];
+}
+
 module.exports = router;
