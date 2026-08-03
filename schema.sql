@@ -23,6 +23,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS zip_code TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
 
 -- Tokens de redefinição de senha (para implementar fluxo seguro)
 CREATE TABLE IF NOT EXISTS password_resets (

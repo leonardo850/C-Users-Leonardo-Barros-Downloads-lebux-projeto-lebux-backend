@@ -9,12 +9,21 @@ const router = express.Router();
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { name, email, password, phone, username, address, city, state, zip_code } = req.body;
+  const { name, email, password, phone, username, address, city, state, zip_code, gender } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
   }
+  if (!phone) {
+    return res.status(400).json({ error: 'Celular é obrigatório' });
+  }
   if (!address || !city || !state) {
     return res.status(400).json({ error: 'Endereço, cidade e estado são obrigatórios' });
+  }
+  if (!zip_code) {
+    return res.status(400).json({ error: 'CEP é obrigatório' });
+  }
+  if (gender && !['masculino', 'feminino'].includes(gender)) {
+    return res.status(400).json({ error: 'Sexo inválido' });
   }
 
   const emailNorm = String(email).trim().toLowerCase();
@@ -30,14 +39,13 @@ router.post('/register', async (req, res) => {
 
   const hashed = await bcrypt.hash(password, 12);
 
-  const newUser = { name, email: emailNorm, password_hash: hashed, phone, address, city, state };
+  const newUser = { name, email: emailNorm, password_hash: hashed, phone, address, city, state, zip_code, gender };
   if (usernameNorm) newUser.username = usernameNorm;
-  if (zip_code) newUser.zip_code = zip_code;
 
   const { data, error } = await supabase
     .from('users')
     .insert(newUser)
-    .select('id, name, email, phone, address, city, state')
+    .select('id, name, email, phone, address, city, state, zip_code, gender')
     .single();
 
   if (error) {
