@@ -9,9 +9,12 @@ const router = express.Router();
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { name, email, password, phone, username } = req.body;
+  const { name, email, password, phone, username, address, city, state, zip_code } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
+  }
+  if (!address || !city || !state) {
+    return res.status(400).json({ error: 'Endereço, cidade e estado são obrigatórios' });
   }
 
   const emailNorm = String(email).trim().toLowerCase();
@@ -27,13 +30,14 @@ router.post('/register', async (req, res) => {
 
   const hashed = await bcrypt.hash(password, 12);
 
-  const newUser = { name, email: emailNorm, password_hash: hashed, phone };
+  const newUser = { name, email: emailNorm, password_hash: hashed, phone, address, city, state };
   if (usernameNorm) newUser.username = usernameNorm;
+  if (zip_code) newUser.zip_code = zip_code;
 
   const { data, error } = await supabase
     .from('users')
     .insert(newUser)
-    .select('id, name, email, phone')
+    .select('id, name, email, phone, address, city, state')
     .single();
 
   if (error) {
@@ -42,7 +46,7 @@ router.post('/register', async (req, res) => {
   }
 
   const token = jwt.sign({ id: data.id, email: data.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-  res.status(201).json({ user: data, token });
+  res.status(201).json({ user: { ...data, address: data.address || '', city: data.city || '', state: data.state || '' }, token });
 });
 
 // POST /api/auth/login
@@ -72,7 +76,17 @@ router.post('/login', async (req, res) => {
     ? await supabase.from('barbershops').select('id, name, address, city').eq('owner_id', user.id)
     : { data: [] };
 
-  res.json({ user: safeUser, token, isCompany, barbershops: barbershops || [] });
+  res.json({
+    user: {
+      ...safeUser,
+      address: safeUser.address || '',
+      city: safeUser.city || '',
+      state: safeUser.state || '',
+    },
+    token,
+    isCompany,
+    barbershops: barbershops || []
+  });
 });
 
 // POST /api/auth/forgot

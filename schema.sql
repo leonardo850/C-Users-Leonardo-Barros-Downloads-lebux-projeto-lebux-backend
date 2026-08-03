@@ -1,10 +1,11 @@
 -- ============================================================
 -- LEBUX - Schema do banco de dados (Supabase / PostgreSQL)
 -- Cole este SQL no SQL Editor do Supabase e execute
+-- Pode ser executado mais de uma vez (não gera erro)
 -- ============================================================
 
 -- Usuários (clientes e empresas)
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   username TEXT UNIQUE,
@@ -17,8 +18,14 @@ CREATE TABLE users (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Colunas de endereço (se não existirem)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS zip_code TEXT;
+
 -- Tokens de redefinição de senha (para implementar fluxo seguro)
-CREATE TABLE password_resets (
+CREATE TABLE IF NOT EXISTS password_resets (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   token TEXT UNIQUE NOT NULL,
@@ -27,7 +34,7 @@ CREATE TABLE password_resets (
 );
 
 -- Barbearias
-CREATE TABLE barbershops (
+CREATE TABLE IF NOT EXISTS barbershops (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
@@ -49,7 +56,7 @@ CREATE TABLE barbershops (
 );
 
 -- Barbeiros (funcionários)
-CREATE TABLE barbers (
+CREATE TABLE IF NOT EXISTS barbers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   barbershop_id UUID REFERENCES barbershops(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -60,7 +67,7 @@ CREATE TABLE barbers (
 );
 
 -- Serviços oferecidos
-CREATE TABLE services (
+CREATE TABLE IF NOT EXISTS services (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   barbershop_id UUID REFERENCES barbershops(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -73,7 +80,7 @@ CREATE TABLE services (
 );
 
 -- Agendamentos
-CREATE TABLE appointments (
+CREATE TABLE IF NOT EXISTS appointments (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES users(id),
   barbershop_id UUID REFERENCES barbershops(id),
@@ -88,7 +95,7 @@ CREATE TABLE appointments (
 );
 
 -- Avaliações
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES users(id),
   barbershop_id UUID REFERENCES barbershops(id),
@@ -99,7 +106,7 @@ CREATE TABLE reviews (
 );
 
 -- Horários de funcionamento por dia da semana
-CREATE TABLE business_hours (
+CREATE TABLE IF NOT EXISTS business_hours (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   barbershop_id UUID REFERENCES barbershops(id) ON DELETE CASCADE,
   day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
@@ -126,10 +133,10 @@ INSERT INTO business_hours (barbershop_id, day_of_week, is_open, open_time, clos
 SELECT id, 6, true, '09:00', '13:00' FROM barbershops WHERE NOT EXISTS (SELECT 1 FROM business_hours WHERE barbershop_id = barbershops.id AND day_of_week = 6);
 
 -- Índices para performance
-CREATE INDEX idx_barbershops_location ON barbershops(latitude, longitude);
-CREATE INDEX idx_appointments_date ON appointments(barbershop_id, date);
-CREATE INDEX idx_appointments_user ON appointments(user_id);
-CREATE INDEX idx_business_hours_shop ON business_hours(barbershop_id);
+CREATE INDEX IF NOT EXISTS idx_barbershops_location ON barbershops(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(barbershop_id, date);
+CREATE INDEX IF NOT EXISTS idx_appointments_user ON appointments(user_id);
+CREATE INDEX IF NOT EXISTS idx_business_hours_shop ON business_hours(barbershop_id);
 
 -- ============================================================
 -- DADOS DE EXEMPLO (barbearias demo)
@@ -138,7 +145,8 @@ INSERT INTO barbershops (name, description, address, city, state, phone, latitud
 VALUES
   ('Barber King', 'A melhor barbearia da cidade, especialista em cortes modernos e barba.', 'Rua das Flores, 123', 'Jaú', 'SP', '(14) 99999-0001', -22.2964, -48.5589, true, 4.9, 124),
   ('Studio 7', 'Espaço moderno com barbeiros especializados em cortes e sobrancelha.', 'Av. Central, 456', 'Jaú', 'SP', '(14) 99999-0002', -22.2994, -48.5559, true, 4.7, 89),
-  ('Noble Barbers', 'Experiência premium em barbearia com tratamentos exclusivos.', 'Rua Prudente de Moraes, 321', 'Jaú', 'SP', '(14) 99999-0004', -22.2934, -48.5619, true, 4.8, 67);
+  ('Noble Barbers', 'Experiência premium em barbearia com tratamentos exclusivos.', 'Rua Prudente de Moraes, 321', 'Jaú', 'SP', '(14) 99999-0004', -22.2934, -48.5619, true, 4.8, 67)
+ON CONFLICT DO NOTHING;
 
 -- Buscar IDs das barbearias inseridas para adicionar serviços
 DO $$
@@ -161,7 +169,8 @@ BEGIN
     (studio_id, 'Corte + Sobrancelha', 35, 40, 'combo'),
     (noble_id, 'Corte Premium', 55, 45, 'corte'),
     (noble_id, 'Barba Relaxante', 45, 40, 'barba'),
-    (noble_id, 'Experiência Completa', 120, 90, 'combo');
+    (noble_id, 'Experiência Completa', 120, 90, 'combo')
+  ON CONFLICT DO NOTHING;
 END $$;
 
 -- ============================================================
@@ -173,10 +182,13 @@ ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 
 -- Barbearias são públicas para leitura
 ALTER TABLE barbershops ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "barbershops_public_read" ON barbershops;
 CREATE POLICY "barbershops_public_read" ON barbershops FOR SELECT USING (true);
 
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "services_public_read" ON services;
 CREATE POLICY "services_public_read" ON services FOR SELECT USING (true);
 
 ALTER TABLE barbers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "barbers_public_read" ON barbers;
 CREATE POLICY "barbers_public_read" ON barbers FOR SELECT USING (true);
