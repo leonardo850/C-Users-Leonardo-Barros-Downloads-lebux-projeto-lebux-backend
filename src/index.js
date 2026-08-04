@@ -8,8 +8,7 @@ const barbershopRoutes = require('./routes/barbershops');
 const appointmentRoutes = require('./routes/appointments');
 const serviceRoutes = require('./routes/services');
 const companyRoutes = require('./routes/company');
-const supabase = require('./lib/supabase');
-const bcrypt = require('bcryptjs');
+const { validateEnvironment, ensureSeedUsers } = require('./lib/bootstrap');
 
 const app = express();
 
@@ -54,72 +53,16 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3001;
 
-async function ensureAdminUser() {
-  const adminEmail = 'lebuxapp@gmail.com';
-  const adminPassword = 'Enrico@24';
-
-  const { data: existing } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', adminEmail)
-    .single();
-
-  if (existing) return;
-
-  const hashed = await bcrypt.hash(adminPassword, 12);
-  await supabase.from('users').insert({
-    name: 'Admin Lebux',
-    email: adminEmail,
-    password_hash: hashed,
-  });
+try {
+  validateEnvironment();
+} catch (error) {
+  console.error(error.message);
+  if (process.env.NODE_ENV !== 'test') {
+    process.exit(1);
+  }
 }
 
-async function ensureCompanyUser() {
-  const companyEmail = 'empresa@lebux.com';
-  const companyPassword = 'Empresa@123';
-
-  const { data: existing } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', companyEmail)
-    .single();
-
-  if (existing) return existing;
-
-  const hashed = await bcrypt.hash(companyPassword, 12);
-  const { data: newUser, error } = await supabase
-    .from('users')
-    .insert({
-      name: 'Barbearia do Leonardo',
-      email: companyEmail,
-      password_hash: hashed,
-    })
-    .select('*')
-    .single();
-
-  if (error) {
-    console.error('Erro ao criar usuário empresa:', error);
-    return null;
-  }
-
-  const { data: firstShop } = await supabase
-    .from('barbershops')
-    .select('id')
-    .limit(1)
-    .single();
-
-  if (firstShop) {
-    await supabase
-      .from('barbershops')
-      .update({ owner_id: newUser.id })
-      .eq('id', firstShop.id);
-    console.log(`✅ Barbearia "${firstShop.id}" vinculada à empresa`);
-  }
-
-  return newUser;
-}
-
-ensureAdminUser().catch(err => console.error('Erro ao garantir usuário admin:', err));
-ensureCompanyUser().catch(err => console.error('Erro ao garantir usuário empresa:', err));
+ensureSeedUsers()
+  .catch(err => console.error('Erro ao garantir usuários seed:', err));
 
 app.listen(PORT, () => console.log(`🚀 Lebux API rodando na porta ${PORT}`));

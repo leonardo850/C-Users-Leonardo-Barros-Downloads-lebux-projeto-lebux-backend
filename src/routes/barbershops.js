@@ -1,5 +1,6 @@
 const express = require('express');
 const supabase = require('../lib/supabase');
+const { normalizeShopForClient } = require('../lib/shopDisplay');
 
 const router = express.Router();
 
@@ -25,11 +26,11 @@ router.get('/', async (req, res) => {
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: 'Erro ao buscar barbearias' });
 
-  let result = data;
+  let result = (data || []).map(normalizeShopForClient);
 
   // Calcular distância se lat/lng fornecidos
   if (lat && lng) {
-    result = data
+    result = result
       .map(shop => {
         const dist = calcDistance(
           parseFloat(lat), parseFloat(lng),
@@ -57,7 +58,7 @@ router.get('/:id', async (req, res) => {
     .single();
 
   if (error || !data) return res.status(404).json({ error: 'Barbearia não encontrada' });
-  res.json(data);
+  res.json(normalizeShopForClient(data));
 });
 
 // GET /api/barbershops/:id/availability?date=2025-01-15&service_id=1
