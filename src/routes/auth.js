@@ -10,24 +10,39 @@ const router = express.Router();
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { name, email, password, phone, username, address, city, state, zip_code, gender, cnpj, services } = req.body;
+  const { name, email, password, phone, username, address, number, complement, city, state, zip_code, gender, cnpj, services } = req.body;
   const company = Boolean(cnpj);
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
+  if (!String(name || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Nome" é obrigatório' });
+  }
+  if (!String(email || '').trim()) {
+    return res.status(400).json({ error: 'O campo "E-mail" é obrigatório' });
+  }
+  if (!String(password || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Senha" é obrigatória' });
   }
   if (!/^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}$/.test(password)) {
     return res.status(400).json({ error: 'Senha deve ter no mínimo 8 caracteres, com maiúscula, número e caractere especial' });
   }
-  if (!phone) {
-    return res.status(400).json({ error: 'Celular é obrigatório' });
+  if (!String(phone || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Celular" é obrigatório' });
   }
-  if (!address || !city || !state) {
-    return res.status(400).json({ error: 'Endereço, cidade e estado são obrigatórios' });
+  if (!String(address || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Endereço" é obrigatório' });
   }
-  if (!zip_code) {
-    return res.status(400).json({ error: 'CEP é obrigatório' });
+  if (!String(city || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Cidade" é obrigatório' });
   }
-  if (gender && !['masculino', 'feminino'].includes(gender)) {
+  if (!String(state || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Estado" é obrigatório' });
+  }
+  if (!String(zip_code || '').trim()) {
+    return res.status(400).json({ error: 'O campo "CEP" é obrigatório' });
+  }
+  if (!company && !String(gender || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Sexo" é obrigatório' });
+  }
+  if (gender && !['masculino', 'feminino', 'indefinido'].includes(gender)) {
     return res.status(400).json({ error: 'Sexo inválido' });
   }
 
@@ -44,14 +59,14 @@ router.post('/register', async (req, res) => {
 
   const hashed = await bcrypt.hash(password, 12);
 
-  const newUser = { name, email: emailNorm, password_hash: hashed, phone, address, city, state, zip_code, gender };
+  const newUser = { name, email: emailNorm, password_hash: hashed, phone, address, number, complement, city, state, zip_code, gender };
   if (usernameNorm) newUser.username = usernameNorm;
   if (company) newUser.cnpj = String(cnpj).replace(/\D/g, '');
 
   const { data, error } = await supabase
     .from('users')
     .insert(newUser)
-    .select('id, name, email, phone, address, city, state, zip_code, gender, cnpj')
+    .select('id, name, email, phone, address, number, complement, city, state, zip_code, gender, cnpj')
     .single();
 
   if (error) {
@@ -95,7 +110,7 @@ router.post('/register', async (req, res) => {
   }
 
   const token = jwt.sign({ id: data.id, email: data.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-  res.status(201).json({ user: { ...data, address: data.address || '', city: data.city || '', state: data.state || '' }, token, isCompany: company });
+  res.status(201).json({ user: { ...data, address: data.address || '', number: data.number || '', complement: data.complement || '', city: data.city || '', state: data.state || '' }, token, isCompany: company });
 });
 
 // POST /api/auth/login
@@ -129,6 +144,8 @@ router.post('/login', async (req, res) => {
     user: {
       ...safeUser,
       address: safeUser.address || '',
+      number: safeUser.number || '',
+      complement: safeUser.complement || '',
       city: safeUser.city || '',
       state: safeUser.state || '',
     },
@@ -195,7 +212,16 @@ router.patch('/profile', require('../middleware/auth'), async (req, res) => {
     return res.status(400).json({ error: 'Nenhum dado para atualizar' });
   }
 
-  if (payload.gender && !['masculino', 'feminino'].includes(payload.gender)) {
+  if (!String(payload.name || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Nome" é obrigatório' });
+  }
+  if (!String(payload.email || '').trim()) {
+    return res.status(400).json({ error: 'O campo "E-mail" é obrigatório' });
+  }
+  if (!String(payload.phone || '').trim()) {
+    return res.status(400).json({ error: 'O campo "Celular" é obrigatório' });
+  }
+  if (payload.gender && !['masculino', 'feminino', 'indefinido'].includes(payload.gender)) {
     return res.status(400).json({ error: 'Sexo inválido' });
   }
 
@@ -211,19 +237,30 @@ router.patch('/profile', require('../middleware/auth'), async (req, res) => {
     }
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .update(payload)
-    .eq('id', req.user.id)
-    .select('id, name, email, phone, address, city, state, zip_code, gender, cnpj')
-    .single();
+  const updateProfile = async (dataToUpdate) => {
+    return supabase
+      .from('users')
+      .update(dataToUpdate)
+      .eq('id', req.user.id)
+      .select('id, name, email, phone, address, number, complement, city, state, zip_code, gender, cnpj')
+      .single();
+  };
+
+  let { data, error } = await updateProfile(payload);
+
+  if (error && /column .* does not exist/i.test(error.message || '')) {
+    const fallbackPayload = Object.fromEntries(
+      Object.entries(payload).filter(([key]) => !['number', 'complement'].includes(key))
+    );
+    ({ data, error } = await updateProfile(fallbackPayload));
+  }
 
   if (error) {
     console.error('Erro ao atualizar perfil:', error);
     return res.status(500).json({ error: 'Erro ao atualizar perfil' });
   }
 
-  res.json({ user: { ...data, address: data.address || '', city: data.city || '', state: data.state || '' } });
+  res.json({ user: { ...data, address: data.address || '', number: data.number || '', complement: data.complement || '', city: data.city || '', state: data.state || '' } });
 });
 
 // PATCH /api/auth/password - Alterar senha (requer autenticação)
