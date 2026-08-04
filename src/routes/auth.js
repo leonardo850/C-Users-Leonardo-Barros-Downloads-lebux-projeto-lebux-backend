@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const supabase = require('../lib/supabase');
 const crypto = require('crypto');
 const { sendPasswordResetEmail } = require('../lib/mailer');
+const { normalizeProfilePayload } = require('../lib/profile');
 
 const router = express.Router();
 
@@ -184,6 +185,45 @@ router.post('/reset', async (req, res) => {
   await supabase.from('password_resets').delete().eq('user_id', pr.user_id);
 
   return res.json({ message: 'Senha alterada com sucesso' });
+});
+
+// PATCH /api/auth/profile - Atualizar dados do perfil (requer autenticação)
+router.patch('/profile', require('../middleware/auth'), async (req, res) => {
+  const payload = normalizeProfilePayload(req.body || {});
+
+  if (!Object.keys(payload).length) {
+    return res.status(400).json({ error: 'Nenhum dado para atualizar' });
+  }
+
+  if (payload.gender && !['masculino', 'feminino'].includes(payload.gender)) {
+    return res.status(400).json({ error: 'Sexo inválido' });
+  }
+
+  if (payload.email) {
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', payload.email)
+      .single();
+
+    if (existing && existing.id !== req.user.id) {
+      return res.status(409).json({ error: 'E-mail já cadastrado' });
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .update(payload)
+    .eq('id', req.user.id)
+    .select('id, name, email, phone, address, city, state, zip_code, gender, cnpj')
+    .single();
+
+  if (error) {
+    console.error('Erro ao atualizar perfil:', error);
+    return res.status(500).json({ error: 'Erro ao atualizar perfil' });
+  }
+
+  res.json({ user: { ...data, address: data.address || '', city: data.city || '', state: data.state || '' } });
 });
 
 // PATCH /api/auth/password - Alterar senha (requer autenticação)
