@@ -13,6 +13,9 @@ router.post('/register', async (req, res) => {
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
   }
+  if (!/^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}$/.test(password)) {
+    return res.status(400).json({ error: 'Senha deve ter no mínimo 8 caracteres, com maiúscula, número e caractere especial' });
+  }
   if (!phone) {
     return res.status(400).json({ error: 'Celular é obrigatório' });
   }
@@ -154,6 +157,9 @@ router.patch('/password', require('../middleware/auth'), async (req, res) => {
   }
   if (new_password.length < 8) {
     return res.status(400).json({ error: 'Nova senha deve ter no mínimo 8 caracteres' });
+  }
+  if (!/^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9])/.test(new_password)) {
+    return res.status(400).json({ error: 'Nova senha deve conter maiúscula, número e caractere especial' });
   }
 
   const { data: user } = await supabase
