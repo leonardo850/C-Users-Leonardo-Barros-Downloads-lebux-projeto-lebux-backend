@@ -9,7 +9,8 @@ const router = express.Router();
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { name, email, password, phone, username, address, city, state, zip_code, gender } = req.body;
+  const { name, email, password, phone, username, address, city, state, zip_code, gender, cnpj, services } = req.body;
+  const company = Boolean(cnpj);
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
   }
@@ -44,11 +45,12 @@ router.post('/register', async (req, res) => {
 
   const newUser = { name, email: emailNorm, password_hash: hashed, phone, address, city, state, zip_code, gender };
   if (usernameNorm) newUser.username = usernameNorm;
+  if (company) newUser.cnpj = String(cnpj).replace(/\D/g, '');
 
   const { data, error } = await supabase
     .from('users')
     .insert(newUser)
-    .select('id, name, email, phone, address, city, state, zip_code, gender')
+    .select('id, name, email, phone, address, city, state, zip_code, gender, cnpj')
     .single();
 
   if (error) {
@@ -56,8 +58,43 @@ router.post('/register', async (req, res) => {
     return res.status(500).json({ error: 'Erro ao criar usuário' });
   }
 
+  // Se for empresa, criar a barbearia e os serviços cadastrados
+  if (company && Array.isArray(services)) {
+    let lat = 0, lng = 0;
+    try {
+      const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(`${address}, ${city} - ${state}`)}`);
+      if (geoRes.ok) {
+        const geo = await geoRes.json();
+        if (geo && geo.length) { lat = parseFloat(geo[0].lat); lng = parseFloat(geo[0].lon); }
+      }
+    } catch (e) { /* mantém 0,0 se não geocodificar */ }
+
+    const { data: shop, error: shopErr } = await supabase
+      .from('barbershops')
+      .insert({ name, address, city, state, phone, latitude: lat, longitude: lng, owner_id: data.id })
+      .select('id')
+      .single();
+
+    if (shopErr) {
+      console.error('Erro ao criar barbearia:', shopErr);
+    } else if (services.length > 0) {
+      const serviceRows = services.map(s => ({
+        barbershop_id: shop.id,
+        name: String(s.name || '').trim(),
+        price: parseFloat(s.price) || 0,
+        duration_minutes: parseInt(s.duration_minutes, 10) || 30,
+        category: s.category || 'corte',
+      })).filter(s => s.name);
+
+      if (serviceRows.length > 0) {
+        const { error: svcErr } = await supabase.from('services').insert(serviceRows);
+        if (svcErr) console.error('Erro ao criar serviços:', svcErr);
+      }
+    }
+  }
+
   const token = jwt.sign({ id: data.id, email: data.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-  res.status(201).json({ user: { ...data, address: data.address || '', city: data.city || '', state: data.state || '' }, token });
+  res.status(201).json({ user: { ...data, address: data.address || '', city: data.city || '', state: data.state || '' }, token, isCompany: company });
 });
 
 // POST /api/auth/login
@@ -80,8 +117,8 @@ router.post('/login', async (req, res) => {
   const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
   const { password_hash, ...safeUser } = user;
 
-  // Identificar empresa pelo email
-  const isCompany = user.email === 'empresa@lebux.com';
+  // Identificar empresa (CNPJ cadastrado)
+  const isCompany = Boolean(user.cnpj) || user.email === 'empresa@lebux.com';
 
   const { data: barbershops } = isCompany
     ? await supabase.from('barbershops').select('id, name, address, city').eq('owner_id', user.id)
