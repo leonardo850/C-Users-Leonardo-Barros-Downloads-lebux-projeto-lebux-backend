@@ -5,8 +5,15 @@ const authMiddleware = require('../middleware/auth');
 const router = express.Router();
 
 // Middleware para verificar se é empresa
-function companyMiddleware(req, res, next) {
-  if (req.user.email !== 'empresa@lebux.com') {
+async function companyMiddleware(req, res, next) {
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('cnpj')
+    .eq('id', req.user.id)
+    .single();
+
+  const isCompany = !error && user && (Boolean(user.cnpj) || req.user.email === 'empresa@lebux.com');
+  if (!isCompany) {
     return res.status(403).json({ error: 'Acesso permitido apenas para empresas' });
   }
   next();
