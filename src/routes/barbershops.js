@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../lib/supabase');
 const { normalizeShopForClient } = require('../lib/shopDisplay');
+const { matchesShopSearch } = require('../lib/search');
 
 const router = express.Router();
 
@@ -27,6 +28,10 @@ router.get('/', async (req, res) => {
   if (error) return res.status(500).json({ error: 'Erro ao buscar barbearias' });
 
   let result = (data || []).map(normalizeShopForClient);
+
+  if (search) {
+    result = result.filter((shop) => matchesShopSearch(shop, search));
+  }
 
   // Calcular distância se lat/lng fornecidos
   if (lat && lng) {
