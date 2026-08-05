@@ -12,18 +12,8 @@ function matchesShopSearch(shop = {}, searchTerm = '') {
   const normalizedSearch = normalizeText(searchTerm);
   if (!normalizedSearch) return true;
 
-  const haystack = [
-    shop.name,
-    shop.address,
-    shop.city,
-    shop.state,
-    shop.description,
-  ]
-    .filter(Boolean)
-    .map(normalizeText)
-    .join(' ');
-
-  return haystack.includes(normalizedSearch);
+  const name = normalizeText(shop.name);
+  return name.includes(normalizedSearch);
 }
 
 module.exports = { normalizeText, matchesShopSearch };
