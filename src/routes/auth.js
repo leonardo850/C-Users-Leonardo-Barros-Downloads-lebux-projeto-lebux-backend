@@ -248,16 +248,25 @@ router.patch('/profile', require('../middleware/auth'), async (req, res) => {
 
   let { data, error } = await updateProfile(payload);
 
-  if (error && /column .* does not exist/i.test(error.message || '')) {
-    const fallbackPayload = Object.fromEntries(
-      Object.entries(payload).filter(([key]) => !['number', 'complement'].includes(key))
-    );
-    ({ data, error } = await updateProfile(fallbackPayload));
-  }
-
   if (error) {
-    console.error('Erro ao atualizar perfil:', error);
-    return res.status(500).json({ error: 'Erro ao atualizar perfil' });
+    const message = error.message || '';
+    const missingColumn = /column .* does not exist/i.test(message);
+    const invalidInput = /invalid input value/i.test(message);
+
+    if (missingColumn) {
+      const fallbackPayload = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => !['number', 'complement', 'zip_code', 'gender'].includes(key))
+      );
+      ({ data, error } = await updateProfile(fallbackPayload));
+    }
+
+    if (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      const friendlyMessage = missingColumn || invalidInput
+        ? 'Alguns campos não estão disponíveis na base de dados ainda. Tente novamente mais tarde.'
+        : 'Erro ao atualizar perfil';
+      return res.status(500).json({ error: friendlyMessage });
+    }
   }
 
   res.json({ user: { ...data, address: data.address || '', number: data.number || '', complement: data.complement || '', city: data.city || '', state: data.state || '' } });
