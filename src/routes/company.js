@@ -142,9 +142,10 @@ router.post('/appointments', authMiddleware, companyMiddleware, async (req, res)
     .from('services')
     .select('price, name')
     .eq('id', service_id)
+    .eq('barbershop_id', barbershop_id)
     .single();
 
-  if (!service) return res.status(404).json({ error: 'Serviço não encontrado' });
+  if (!service) return res.status(404).json({ error: 'Serviço não encontrado para esta barbearia' });
 
   const { data, error } = await supabase
     .from('appointments')

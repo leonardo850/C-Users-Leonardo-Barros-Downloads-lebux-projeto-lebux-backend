@@ -94,13 +94,17 @@ router.post('/register', async (req, res) => {
     if (shopErr) {
       console.error('Erro ao criar barbearia:', shopErr);
     } else if (services.length > 0) {
-      const serviceRows = services.map(s => ({
-        barbershop_id: shop.id,
-        name: String(s.name || '').trim(),
-        price: parseFloat(s.price) || 0,
-        duration_minutes: parseInt(s.duration_minutes, 10) || 30,
-        category: s.category || 'corte',
-      })).filter(s => s.name);
+      const VALID_CATEGORIES = ['corte', 'corte_feminino', 'barba', 'sobrancelha', 'pigmento', 'combo', 'tratamento'];
+      const serviceRows = services
+        .map(s => ({
+          barbershop_id: shop.id,
+          name: String(s.name || '').trim(),
+          description: String(s.description || '').trim() || null,
+          price: Math.max(0, parseFloat(s.price) || 0),
+          duration_minutes: Math.max(1, parseInt(s.duration_minutes, 10) || 30),
+          category: VALID_CATEGORIES.includes(s.category) ? s.category : 'corte',
+        }))
+        .filter(s => s.name && s.price > 0);
 
       if (serviceRows.length > 0) {
         const { error: svcErr } = await supabase.from('services').insert(serviceRows);
