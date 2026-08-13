@@ -12,6 +12,10 @@ router.post('/', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Campos obrigatórios: barbershop_id, service_id, date, start_time' });
   }
 
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service_id)) {
+    return res.status(400).json({ error: 'Serviço inválido' });
+  }
+
   // Verificar conflito de horário
   const { data: conflict } = await supabase
     .from('appointments')
