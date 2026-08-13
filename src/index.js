@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
+const supabase = require('./lib/supabase');
 const authRoutes = require('./routes/auth');
 const barbershopRoutes = require('./routes/barbershops');
 const appointmentRoutes = require('./routes/appointments');
@@ -64,5 +65,15 @@ try {
 
 ensureSeedUsers()
   .catch(err => console.error('Erro ao garantir usuários seed:', err));
+
+// Aquecer a conexão com o Supabase para a primeira requisição não demorar (edge frio)
+(async () => {
+  try {
+    await supabase.from('barbershops').select('id').limit(1);
+    console.log('Conexão com o Supabase aquecida');
+  } catch (err) {
+    console.error('Falha ao aquecer conexão Supabase:', err.message);
+  }
+})();
 
 app.listen(PORT, () => console.log(`🚀 Lebux API rodando na porta ${PORT}`));
