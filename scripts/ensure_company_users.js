@@ -1,8 +1,16 @@
 require('dotenv').config();
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SYNTHETIC_COMPANY_DATA !== 'true') {
+  console.error('Operação bloqueada. Use somente em ambiente de desenvolvimento isolado com ALLOW_SYNTHETIC_COMPANY_DATA=true.');
+  process.exit(1);
+}
 const bcrypt = require('bcryptjs');
 const supabase = require('../src/lib/supabase');
 
-const FICTIONAL_PASSWORD = 'Empresa@123';
+const COMPANY_BOOTSTRAP_PASSWORD = process.env.COMPANY_BOOTSTRAP_PASSWORD;
+if (!COMPANY_BOOTSTRAP_PASSWORD) {
+  console.error('Defina COMPANY_BOOTSTRAP_PASSWORD no ambiente local antes de executar.');
+  process.exit(1);
+}
 
 function slugify(str) {
   return String(str || '')
@@ -110,7 +118,7 @@ async function ensureOwner(shop, users, created, updated) {
     return { user: data[0], action: 'updated' };
   }
 
-  const hashed = await bcrypt.hash(FICTIONAL_PASSWORD, 12);
+  const hashed = await bcrypt.hash(COMPANY_BOOTSTRAP_PASSWORD, 12);
   const { data, error } = await supabase
     .from('users')
     .insert({
@@ -155,7 +163,7 @@ async function ensureOwner(shop, users, created, updated) {
     }
 
     console.log(`\n✅ ${created.length} usuário(s) fictício(s) criado(s), ${updated.length} atualizado(s).`);
-    console.log('\n=== USUÁRIOS DE EMPRESA (senha padrão: ' + FICTIONAL_PASSWORD + ') ===');
+    console.log('\n=== USUÁRIOS DE EMPRESA (senha definida fora do log) ===');
     [...created, ...updated].forEach(u => {
       console.log(`- ${u.name} | ${u.email} | CNPJ: ${u.cnpj}`);
     });

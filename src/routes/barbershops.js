@@ -2,6 +2,7 @@ const express = require('express');
 const supabase = require('../lib/supabase');
 const { normalizeShopForClient } = require('../lib/shopDisplay');
 const { matchesShopSearch } = require('../lib/search');
+const { isValidUuid } = require('../lib/validation');
 
 const router = express.Router();
 
@@ -18,13 +19,7 @@ router.get('/', async (req, res) => {
     `)
     .eq('active', true);
 
-  if (search) {
-    query = query.or(
-      `name.ilike.%${search}%,address.ilike.%${search}%,city.ilike.%${search}%,state.ilike.%${search}%`
-    );
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await query.limit(1000);
   if (error) return res.status(500).json({ error: 'Erro ao buscar barbearias' });
 
   let result = (data || []).map(normalizeShopForClient);
@@ -69,23 +64,65 @@ router.get('/:id', async (req, res) => {
 // GET /api/barbershops/:id/availability?date=2025-01-15&service_id=1
 router.get('/:id/availability', async (req, res) => {
   const { date, service_id } = req.query;
-  if (!date) return res.status(400).json({ error: 'Data obrigatória' });
+  if (!isValidUuid(req.params.id) || !isValidUuid(service_id)) {
+    return res.status(400).json({ error: 'Barbearia ou serviço inválidos' });
+  }
+  const parsedDate = new Date(`${date}T00:00:00.000Z`);
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
+    return res.status(400).json({ error: 'Data inválida' });
+  }
 
-  const { data: booked } = await supabase
+  const [{ data: shop, error: shopError }, { data: service, error: serviceError }] = await Promise.all([
+    supabase.from('barbershops').select('id, active, is_open, opening_time, closing_time').eq('id', req.params.id).single(),
+    supabase.from('services').select('id, duration_minutes, active').eq('id', service_id).eq('barbershop_id', req.params.id).single(),
+  ]);
+  if (shopError || !shop || shop.active !== true) return res.status(404).json({ error: 'Barbearia não encontrada' });
+  if (serviceError || !service || service.active !== true) return res.status(404).json({ error: 'Serviço não encontrado para esta barbearia' });
+
+  const dayOfWeek = parsedDate.getUTCDay();
+  const { data: hours, error: hoursError } = await supabase
+    .from('business_hours')
+    .select('is_open, open_time, close_time')
+    .eq('barbershop_id', req.params.id)
+    .eq('day_of_week', dayOfWeek)
+    .maybeSingle();
+  if (hoursError) return res.status(500).json({ error: 'Erro ao buscar horários de funcionamento' });
+
+  const openTime = hours ? hours.open_time : shop.opening_time || '09:00';
+  const closeTime = hours ? hours.close_time : dayOfWeek === 6 ? '13:00' : shop.closing_time || '19:00';
+  const shopOpen = shop.is_open !== false && (hours ? hours.is_open === true : dayOfWeek !== 0);
+  if (!shopOpen || date < new Date().toISOString().slice(0, 10)) {
+    return res.json({ date, slots: [] });
+  }
+
+  const { data: booked, error: bookedError } = await supabase
     .from('appointments')
-    .select('start_time')
+    .select('start_time, services (duration_minutes)')
     .eq('barbershop_id', req.params.id)
     .eq('date', date)
     .in('status', ['confirmed', 'pending']);
+  if (bookedError) return res.status(500).json({ error: 'Erro ao buscar agendamentos existentes' });
 
-  const bookedTimes = (booked || []).map(a => a.start_time);
+  const minutes = (value) => {
+    const [hour, minute] = String(value || '').slice(0, 5).split(':').map(Number);
+    return hour * 60 + minute;
+  };
+  const openingMinute = minutes(openTime);
+  const closingMinute = minutes(closeTime);
+  const serviceDuration = Math.max(1, Number(service.duration_minutes) || 30);
+  const bookedIntervals = (booked || []).map((appointment) => ({
+    start: minutes(appointment.start_time),
+    end: minutes(appointment.start_time) + Math.max(1, Number(appointment.services?.duration_minutes) || 30),
+  }));
 
   const slots = [];
-  for (let h = 9; h < 18; h++) {
-    for (let m = 0; m < 60; m += 30) {
-      const time = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-      slots.push({ time, available: !bookedTimes.includes(time) });
-    }
+  for (let start = openingMinute; start + serviceDuration <= closingMinute; start += 30) {
+    const hour = Math.floor(start / 60);
+    const minute = start % 60;
+    const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    const end = start + serviceDuration;
+    const available = !bookedIntervals.some((appointment) => start < appointment.end && appointment.start < end);
+    slots.push({ time, available });
   }
 
   res.json({ date, slots });

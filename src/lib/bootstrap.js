@@ -1,6 +1,17 @@
 const bcrypt = require('bcryptjs');
 const supabase = require('./supabase');
 
+function generateDemoCnpj() {
+  const base = Array.from({ length: 8 }, () => Math.floor(Math.random() * 10)).concat([0, 0, 0, 1]);
+  const digit = (numbers, weights) => {
+    const remainder = numbers.reduce((sum, number, index) => sum + number * weights[index], 0) % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  const first = digit(base, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const second = digit([...base, first], [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return [...base, first, second].join('');
+}
+
 function validateEnvironment({ env = process.env } = {}) {
   const required = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'JWT_SECRET'];
   const missing = required.filter((key) => !env[key]);
@@ -80,6 +91,8 @@ async function ensureSeedUsers() {
         name: config.company.name,
         email: companyEmail,
         password_hash: hashed,
+        cnpj: generateDemoCnpj(),
+        role: 'company',
       })
       .select('*')
       .single();
@@ -102,6 +115,11 @@ async function ensureSeedUsers() {
         .eq('id', firstShop.id);
       console.log(`✅ Barbearia "${firstShop.id}" vinculada à empresa`);
     }
+  } else if (!existingCompany.cnpj) {
+    await supabase
+      .from('users')
+      .update({ cnpj: generateDemoCnpj(), role: 'company' })
+      .eq('id', existingCompany.id);
   }
 
   return { skipped: false };

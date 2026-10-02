@@ -15,13 +15,19 @@ const app = express();
 
 app.use(cors({
   origin: (origin, callback) => {
+    const configuredOrigins = String(process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean);
     const allowedOrigins = [
       'https://lebux.vercel.app',
       'https://frontend-lebux.vercel.app',
+      ...configuredOrigins,
       /^http:\/\/localhost:\d+$/,
       /^http:\/\/127\.0\.0\.1:\d+$/
     ];
-    if (!origin || allowedOrigins.some(a => a instanceof RegExp ? a.test(origin) : a === origin)) {
+    const isVercelPreview = /^https:\/\/[a-z0-9-]+-lebux(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(origin || '');
+    if (!origin || isVercelPreview || allowedOrigins.some(a => a instanceof RegExp ? a.test(origin) : a === origin)) {
       callback(null, true);
     } else {
       callback(new Error('CORS not allowed'));

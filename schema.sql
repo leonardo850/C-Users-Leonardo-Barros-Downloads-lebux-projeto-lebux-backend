@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   cnpj TEXT UNIQUE,
   password_hash TEXT NOT NULL,
+  token_version INTEGER NOT NULL DEFAULT 0,
   role TEXT NOT NULL DEFAULT 'user',
   phone TEXT,
   avatar_url TEXT,

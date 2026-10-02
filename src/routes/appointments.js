@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../lib/supabase');
 const authMiddleware = require('../middleware/auth');
+const { mapBookingError, validateBookingInput } = require('../lib/booking');
 
 const router = express.Router();
 
@@ -8,58 +9,41 @@ const router = express.Router();
 router.post('/', authMiddleware, async (req, res) => {
   const { barbershop_id, service_id, barber_id, date, start_time, notes } = req.body;
 
-  if (!barbershop_id || !service_id || !date || !start_time) {
-    return res.status(400).json({ error: 'Campos obrigatórios: barbershop_id, service_id, date, start_time' });
+  const validationError = validateBookingInput({ barbershop_id, service_id, barber_id, date, start_time });
+  if (validationError) return res.status(400).json({ error: validationError });
+  if (notes != null && (typeof notes !== 'string' || notes.length > 1000)) {
+    return res.status(400).json({ error: 'Observações devem ter no máximo 1000 caracteres' });
   }
 
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service_id)) {
-    return res.status(400).json({ error: 'Serviço inválido' });
+  const { data: appointmentId, error: bookingError } = await supabase.rpc('create_appointment_atomic', {
+    p_user_id: req.user.id,
+    p_barbershop_id: barbershop_id,
+    p_service_id: service_id,
+    p_barber_id: barber_id || null,
+    p_date: date,
+    p_start_time: start_time,
+    p_notes: notes || null,
+    p_owner_id: null,
+  });
+
+  if (bookingError) {
+    const mapped = mapBookingError(bookingError);
+    return res.status(mapped.status).json({ error: mapped.error });
   }
-
-  // Verificar conflito de horário
-  const { data: conflict } = await supabase
-    .from('appointments')
-    .select('id')
-    .eq('barbershop_id', barbershop_id)
-    .eq('date', date)
-    .eq('start_time', start_time)
-    .in('status', ['confirmed', 'pending'])
-    .single();
-
-  if (conflict) return res.status(409).json({ error: 'Horário já ocupado. Escolha outro.' });
-
-  const { data: service } = await supabase
-    .from('services')
-    .select('price, duration_minutes, name')
-    .eq('id', service_id)
-    .eq('barbershop_id', barbershop_id)
-    .single();
-
-  if (!service) return res.status(404).json({ error: 'Serviço não encontrado para esta barbearia' });
 
   const { data, error } = await supabase
     .from('appointments')
-    .insert({
-      user_id: req.user.id,
-      barbershop_id,
-      service_id,
-      barber_id: barber_id || null,
-      date,
-      start_time,
-      price: service.price,
-      notes: notes || null,
-      status: 'confirmed'
-    })
     .select(`
       *,
       barbershops (name, address),
       services (name, price, duration_minutes)
     `)
+    .eq('id', appointmentId)
     .single();
 
-  if (error) return res.status(500).json({ error: 'Erro ao criar agendamento' });
+  if (error) return res.status(500).json({ error: 'Agendamento criado, mas não foi possível carregar os detalhes' });
 
-  res.status(201).json({ appointment: data, message: `Agendamento confirmado! ${service.name} em ${date} às ${start_time}` });
+  res.status(201).json({ appointment: data, message: `Agendamento confirmado! ${data.services?.name || 'Serviço'} em ${date} às ${start_time}` });
 });
 
 // GET /api/appointments — agendamentos do usuário logado

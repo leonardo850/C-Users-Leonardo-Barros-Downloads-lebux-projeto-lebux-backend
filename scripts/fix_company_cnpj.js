@@ -1,4 +1,8 @@
 require('dotenv').config();
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SYNTHETIC_COMPANY_DATA !== 'true') {
+  console.error('Operação bloqueada. Este script gera CNPJs sintéticos e só pode ser usado em ambiente de desenvolvimento isolado.');
+  process.exit(1);
+}
 const supabase = require('../src/lib/supabase');
 
 function calcDigit(nums, weights) {

@@ -1,6 +1,8 @@
 const express = require('express');
 const supabase = require('../lib/supabase');
 const authMiddleware = require('../middleware/auth');
+const { isValidCnpj, isValidUuid } = require('../lib/validation');
+const { mapBookingError, validateBookingInput } = require('../lib/booking');
 
 const router = express.Router();
 
@@ -12,7 +14,7 @@ async function companyMiddleware(req, res, next) {
     .eq('id', req.user.id)
     .single();
 
-  const isCompany = !error && user && (Boolean(user.cnpj) || req.user.email === 'empresa@lebux.com');
+  const isCompany = !error && user && isValidCnpj(user.cnpj);
   if (!isCompany) {
     return res.status(403).json({ error: 'Acesso permitido apenas para empresas' });
   }
@@ -51,15 +53,13 @@ router.get('/clients', authMiddleware, companyMiddleware, async (req, res) => {
     `)
     .in('barbershop_id', shopIds);
 
-  if (search) {
-    query = query.or(`users.name.ilike.%${search}%,users.email.ilike.%${search}%`);
-  }
-
-  const { data: appointments, error } = await query;
+  const { data: appointments, error } = await query.limit(5000);
   if (error) return res.status(500).json({ error: 'Erro ao buscar clientes' });
 
+  const searchTerm = String(search || '').trim().slice(0, 100).toLocaleLowerCase('pt-BR');
   const clientMap = {};
   for (const apt of appointments) {
+    if (searchTerm && !`${apt.users?.name || ''} ${apt.users?.email || ''}`.toLocaleLowerCase('pt-BR').includes(searchTerm)) continue;
     const uid = apt.user_id;
     if (!clientMap[uid]) {
       clientMap[uid] = {
@@ -112,67 +112,41 @@ router.get('/appointments', authMiddleware, companyMiddleware, async (req, res) 
 router.post('/appointments', authMiddleware, companyMiddleware, async (req, res) => {
   const { user_id, barbershop_id, service_id, barber_id, date, start_time, notes } = req.body;
 
-  if (!user_id || !barbershop_id || !service_id || !date || !start_time) {
-    return res.status(400).json({ error: 'Campos obrigatórios: user_id, barbershop_id, service_id, date, start_time' });
+  const validationError = validateBookingInput({ barbershop_id, service_id, barber_id, date, start_time });
+  if (validationError) return res.status(400).json({ error: validationError });
+  if (!isValidUuid(user_id)) return res.status(400).json({ error: 'Cliente inválido' });
+  if (notes != null && (typeof notes !== 'string' || notes.length > 1000)) {
+    return res.status(400).json({ error: 'Observações devem ter no máximo 1000 caracteres' });
   }
 
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service_id)) {
-    return res.status(400).json({ error: 'Serviço inválido' });
+  const { data: appointmentId, error: bookingError } = await supabase.rpc('create_appointment_atomic', {
+    p_user_id: user_id,
+    p_barbershop_id: barbershop_id,
+    p_service_id: service_id,
+    p_barber_id: barber_id || null,
+    p_date: date,
+    p_start_time: start_time,
+    p_notes: notes || null,
+    p_owner_id: req.user.id,
+  });
+
+  if (bookingError) {
+    const mapped = mapBookingError(bookingError);
+    return res.status(mapped.status).json({ error: mapped.error });
   }
-
-  // Verificar se a barbearia pertence à empresa
-  const { data: shop } = await supabase
-    .from('barbershops')
-    .select('id')
-    .eq('id', barbershop_id)
-    .eq('owner_id', req.user.id)
-    .single();
-
-  if (!shop) return res.status(403).json({ error: 'Barbearia não pertence à sua empresa' });
-
-  // Verificar conflito de horário
-  const { data: conflict } = await supabase
-    .from('appointments')
-    .select('id')
-    .eq('barbershop_id', barbershop_id)
-    .eq('date', date)
-    .eq('start_time', start_time)
-    .in('status', ['confirmed', 'pending'])
-    .single();
-
-  if (conflict) return res.status(409).json({ error: 'Horário já ocupado' });
-
-  const { data: service } = await supabase
-    .from('services')
-    .select('price, name')
-    .eq('id', service_id)
-    .eq('barbershop_id', barbershop_id)
-    .single();
-
-  if (!service) return res.status(404).json({ error: 'Serviço não encontrado para esta barbearia' });
 
   const { data, error } = await supabase
     .from('appointments')
-    .insert({
-      user_id,
-      barbershop_id,
-      service_id,
-      barber_id: barber_id || null,
-      date,
-      start_time,
-      price: service.price,
-      notes: notes || null,
-      status: 'confirmed',
-    })
     .select(`
       *,
       users (id, name, email, phone),
       barbershops (name, address),
       services (name, price, duration_minutes)
     `)
+    .eq('id', appointmentId)
     .single();
 
-  if (error) return res.status(500).json({ error: 'Erro ao criar agendamento' });
+  if (error) return res.status(500).json({ error: 'Agendamento criado, mas não foi possível carregar os detalhes' });
   res.status(201).json({ appointment: data, message: `Agendamento criado para ${data.users?.name || 'cliente'}!` });
 });
 
@@ -222,16 +196,22 @@ router.get('/reports', authMiddleware, companyMiddleware, async (req, res) => {
 
 // GET /api/company/hours/:shop_id — horários de funcionamento
 router.get('/hours/:shop_id', authMiddleware, companyMiddleware, async (req, res) => {
+  const { data: shop, error: shopError } = await supabase
+    .from('barbershops')
+    .select('id')
+    .eq('id', req.params.shop_id)
+    .eq('owner_id', req.user.id)
+    .single();
+
+  if (shopError || !shop) return res.status(403).json({ error: 'Barbearia não pertence à sua empresa' });
+
   const { data: hours, error } = await supabase
     .from('business_hours')
     .select('*')
     .eq('barbershop_id', req.params.shop_id)
     .order('day_of_week');
 
-  if (error) {
-    // Tabela pode não existir — retornar padrão
-    return res.json({ hours: defaultHours() });
-  }
+  if (error) return res.status(500).json({ error: 'Erro ao buscar horários da barbearia' });
 
   if (!hours?.length) return res.json({ hours: defaultHours() });
   res.json({ hours });
@@ -240,7 +220,26 @@ router.get('/hours/:shop_id', authMiddleware, companyMiddleware, async (req, res
 // PUT /api/company/hours/:shop_id — atualizar horários
 router.put('/hours/:shop_id', authMiddleware, companyMiddleware, async (req, res) => {
   const { hours } = req.body;
-  if (!Array.isArray(hours)) return res.status(400).json({ error: 'hours deve ser um array' });
+  if (!Array.isArray(hours) || hours.length !== 7) {
+    return res.status(400).json({ error: 'Informe exatamente os horários dos sete dias da semana' });
+  }
+
+  const days = new Set();
+  for (const hour of hours) {
+    const day = Number(hour?.day_of_week);
+    const openTime = hour?.open_time || '09:00';
+    const closeTime = hour?.close_time || '19:00';
+    if (!Number.isInteger(day) || day < 0 || day > 6 || days.has(day)) {
+      return res.status(400).json({ error: 'Cada dia da semana deve aparecer uma única vez' });
+    }
+    days.add(day);
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(openTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(closeTime)) {
+      return res.status(400).json({ error: 'Horário de abertura ou fechamento inválido' });
+    }
+    if (hour.is_open !== false && openTime >= closeTime) {
+      return res.status(400).json({ error: 'O fechamento deve ocorrer depois da abertura' });
+    }
+  }
 
   // Verificar se a barbearia pertence à empresa
   const { data: shop } = await supabase
@@ -252,9 +251,6 @@ router.put('/hours/:shop_id', authMiddleware, companyMiddleware, async (req, res
 
   if (!shop) return res.status(403).json({ error: 'Barbearia não pertence à sua empresa' });
 
-  // Remover horários antigos e inserir novos
-  await supabase.from('business_hours').delete().eq('barbershop_id', req.params.shop_id);
-
   const records = hours.map(h => ({
     barbershop_id: req.params.shop_id,
     day_of_week: h.day_of_week,
@@ -263,10 +259,14 @@ router.put('/hours/:shop_id', authMiddleware, companyMiddleware, async (req, res
     close_time: h.close_time || '19:00',
   }));
 
-  const { error } = await supabase.from('business_hours').insert(records);
+  const { data: savedHours, error } = await supabase.rpc('replace_business_hours', {
+    p_shop_id: req.params.shop_id,
+    p_owner_id: req.user.id,
+    p_hours: records.map(({ day_of_week, is_open, open_time, close_time }) => ({ day_of_week, is_open, open_time, close_time })),
+  });
   if (error) return res.status(500).json({ error: 'Erro ao salvar horários' });
 
-  res.json({ hours: records, message: 'Horários atualizados!' });
+  res.json({ hours: savedHours || records, message: 'Horários atualizados!' });
 });
 
 function defaultHours() {
